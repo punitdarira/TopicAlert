@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
@@ -20,11 +21,14 @@ type EmailRowDb struct {
 }
 
 func main() {
-	router := gin.Default()
-	router.GET("/get-topics", getTopics)
-	router.POST("/new-topic", postTopic)
 
-	router.Run("localhost:8080")
+	runTracker()
+	/*
+		router := gin.Default()
+		router.GET("/get-topics", getTopics)
+		router.POST("/new-topic", postTopic)
+		router.Run("localhost:8080")
+	*/
 }
 
 func getTopics(c *gin.Context) {
@@ -74,7 +78,6 @@ func postTopic(c *gin.Context) {
 		}
 	} else {
 		insertTopic(db, userId, newTopic.Topic, c)
-		c.IndentedJSON(http.StatusCreated, EmailRowDb{Email_id: emailId, User_id: userId})
 	}
 
 }
@@ -83,4 +86,44 @@ func insertTopic(db *sql.DB, user_id int, topic string, c *gin.Context) {
 	db.Query("insert into topictracker.topics (user_id, topic) values (?, ?)",
 		user_id, topic)
 	c.IndentedJSON(http.StatusCreated, topic)
+}
+
+func runTracker() {
+	db, err := sql.Open("mysql", "root:root@tcp(localhost:3306)/topictracker")
+	if err != nil {
+		panic(err.Error())
+	}
+	rows, err := db.Query("select * from topictracker.topics group by user_id, topic")
+	var userId int
+	var topic string
+	userTopicsMap := make(map[int][]string)
+	for rows.Next() {
+		rows.Scan(&userId, &topic)
+		userTopicsMap[userId] = append(userTopicsMap[userId], topic)
+	}
+
+	var userWaitGroup sync.WaitGroup
+	userWaitGroup.Add(len(userTopicsMap))
+
+	for userId, userTopics := range userTopicsMap {
+		go runTopicsForUser(userId, userTopics, &userWaitGroup)
+	}
+	userWaitGroup.Wait()
+}
+
+func runTopicsForUser(userId int, userTopics []string, userWaitGroup *sync.WaitGroup) {
+	defer userWaitGroup.Done()
+	fmt.Println("Running for user ", userId)
+	var topicForEachUser sync.WaitGroup
+	topicForEachUser.Add(len(userTopics))
+	for _, topic := range userTopics {
+		go runTopic(topic, &topicForEachUser)
+	}
+	topicForEachUser.Wait()
+}
+
+func runTopic(topic string, topicForEachUser *sync.WaitGroup) {
+	defer topicForEachUser.Done()
+	fmt.Println("Running topic ", topic)
+	scrape(topic)
 }
