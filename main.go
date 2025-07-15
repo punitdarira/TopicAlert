@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"topicalert/Mail"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
@@ -23,6 +24,7 @@ type EmailRowDb struct {
 func main() {
 
 	runTracker()
+	Mail.Mail()
 	/*
 		router := gin.Default()
 		router.GET("/get-topics", getTopics)
